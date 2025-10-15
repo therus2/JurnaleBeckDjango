@@ -1,0 +1,11 @@
+from django.urls import path
+from .views import RegisterView, SyncNotesView, UpdatesView, DeleteNoteView
+from rest_framework_simplejwt.views import TokenObtainPairView
+
+urlpatterns = [
+    path('register', RegisterView.as_view()),
+    path('login', TokenObtainPairView.as_view()),  # POST {username,password} → token
+    path('notes/sync', SyncNotesView.as_view()),
+    path('notes/updates', UpdatesView.as_view()),
+    path('notes/<uuid:pk>', DeleteNoteView.as_view()),
+]
