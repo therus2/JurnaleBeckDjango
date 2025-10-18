@@ -7,7 +7,8 @@ class NoteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Note
-        fields = '__all__'
+        fields = '__all__'  # uploaded_at уже будет включён автоматически
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)

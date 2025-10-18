@@ -33,7 +33,7 @@ class SyncNotesView(APIView):
 
         for n in notes:
             note_id = n.get("id")
-            obj, _ = Note.objects.get_or_create(
+            obj, created = Note.objects.get_or_create(
                 id=note_id or uuid.uuid4(),
                 defaults={
                     "client_id": n.get("client_id"),
@@ -42,6 +42,7 @@ class SyncNotesView(APIView):
                     "text": n.get("text", ""),
                     "created_at": n.get("created_at", now),
                     "updated_at": n.get("updated_at", now),
+                    "uploaded_at": now,  # дата загрузки на сервер
                     "deleted": n.get("deleted", False),
                 },
             )
@@ -51,9 +52,13 @@ class SyncNotesView(APIView):
                 obj.text = n.get("text", obj.text)
                 obj.updated_at = n.get("updated_at", now)
                 obj.deleted = n.get("deleted", obj.deleted)
+                obj.uploaded_at = now  # обновляем дату загрузки
                 obj.save()
+
             applied.append(NoteSerializer(obj).data)
+
         return Response({"success": True, "applied": applied, "serverTime": now})
+
 
 class UpdatesView(APIView):
     permission_classes = [IsAuthenticated]
