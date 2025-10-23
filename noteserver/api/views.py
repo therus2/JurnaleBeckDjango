@@ -1,5 +1,7 @@
 import json
 import uuid
+
+from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -79,14 +81,47 @@ class DeleteNoteView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
+        print(f"=== DeleteNoteView called for pk: {pk} ===")
         try:
             note_uuid = uuid.UUID(str(pk))
-            note = Note.objects.get(pk=note_uuid)
+            note = Note.objects.get(id=note_uuid)
+            print(f"Note found: {note.id}, deleted={note.deleted}")
         except (ValueError, Note.DoesNotExist):
+            print("Note not found or invalid ID")
             return Response({"error": "Note not found or invalid ID"}, status=status.HTTP_404_NOT_FOUND)
-        if note.author != request.user:
+
+        user = request.user
+        print(f"User: {user.username}, Author: {note.author.username}")
+        if note.author != user:
+            print("Forbidden: Not author")
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
-        note.deleted = True
-        note.updated_at = int(timezone.now().timestamp() * 1000)
-        note.save()
-        return Response({"success": True, "id": str(note.id), "updated_at": note.updated_at})
+
+        if not user.groups.filter(name='teachers').exists():
+            print("Forbidden: Not in teachers group")
+            return Response({"error": "You do not have permission to delete this note"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        # Жёсткое удаление (hard delete)
+        note.delete() # <-- Физически удаляет из БД
+        print(f"Note {note.id} deleted from database.")
+
+        # <<< УБРАТЬ ВСЁ, ЧТО БЫЛО ПОСЛЕ note.delete() >>>
+        # print(f"Before save - deleted={note.deleted}")
+        # note.deleted = True
+        # note.updated_at = ...
+        # note.save()
+        # print(f"After save - deleted={note.deleted}")
+
+        # Ответ без updated_at, потому что объекта больше нет
+        return Response({
+            "success": True,
+            "id": str(note.id), # <-- ID можно вернуть, но объекта в БД уже нет
+        })
+
+@api_view(['GET'])
+def get_user_group(request):
+    user = request.user
+    group_names = [g.name for g in user.groups.all()]
+    return Response({
+        "group": group_names[0] if group_names else None
+    })
