@@ -42,17 +42,19 @@ class SyncNotesView(APIView):
             except ValueError:
                 continue
 
-            # Принимаем поля напрямую — БЕЗ попыток парсить JSON внутри значений!
+            # Получаем имя автора из запроса или используем имя текущего пользователя
+            author_name = n.get("author", user.username)
+
             note, created = Note.objects.update_or_create(
                 id=note_uuid,
                 defaults={
                     "author": user,
+                    "author_name": author_name,  # Сохраняем имя автора из запроса
                     "subject": n.get("subject", ""),
                     "text": n.get("text", ""),
                     "created_at": n.get("created_at", now),
                     "updated_at": n.get("updated_at", now),
                     "uploaded_at": n.get("uploaded_at", now),
-                    # Поле "deleted" убрано, так как используется жёсткое удаление
                 }
             )
             saved_notes.append(NoteSerializer(note).data)

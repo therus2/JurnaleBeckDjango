@@ -4,14 +4,11 @@ from .models import Note
 from django.contrib.auth.models import User
 
 class NoteSerializer(serializers.ModelSerializer):
-    author_username = serializers.ReadOnlyField(source='author.username') # <<< Добавлено для удобства
+    author_username = serializers.ReadOnlyField(source='author.username')
 
     class Meta:
         model = Note
-        fields = '__all__'  # <<< Включает все поля модели (id, author, subject, text, created_at, updated_at, uploaded_at)
-        # author_username добавлен отдельно, но не является полем модели, поэтому указывать его в fields не обязательно,
-        # но можно, чтобы контролировать порядок:
-        # fields = ['id', 'author', 'author_username', 'subject', 'text', 'created_at', 'updated_at', 'uploaded_at']
+        fields = ['id', 'author', 'author_username', 'author_name', 'subject', 'text', 'created_at', 'updated_at', 'uploaded_at']
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
