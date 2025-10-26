@@ -1,16 +1,15 @@
-import json
+# journal/views.py
 import uuid
-
-from rest_framework.decorators import api_view
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import status
 from django.utils import timezone
-from .models import Note
-from .serializers import NoteSerializer, RegisterSerializer
 from django.contrib.auth.models import User
 from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.decorators import api_view
+from .models import Note
+from .serializers import NoteSerializer, RegisterSerializer
 
 class RegisterView(APIView):
     def post(self, request):
@@ -53,7 +52,7 @@ class SyncNotesView(APIView):
                     "created_at": n.get("created_at", now),
                     "updated_at": n.get("updated_at", now),
                     "uploaded_at": n.get("uploaded_at", now),
-                    "deleted": n.get("deleted", False),
+                    # Поле "deleted" убрано, так как используется жёсткое удаление
                 }
             )
             saved_notes.append(NoteSerializer(note).data)
@@ -69,53 +68,42 @@ class UpdatesView(APIView):
 
     def get(self, request):
         since = int(request.query_params.get("since", 0))
-        notes = Note.objects.filter(updated_at__gt=since)
+        # Фильтруем только по автору, чтобы не выдавать чужие заметки
+        notes = Note.objects.filter(
+            author=request.user,
+            updated_at__gt=since
+        ).order_by('updated_at')
         serializer = NoteSerializer(notes, many=True)
+        server_time = int(timezone.now().timestamp() * 1000)
         return Response({
             "success": True,
             "notes": serializer.data,
-            "serverTime": int(timezone.now().timestamp() * 1000)
+            "serverTime": server_time
         })
 
 class DeleteNoteView(APIView):
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
-        print(f"=== DeleteNoteView called for pk: {pk} ===")
         try:
             note_uuid = uuid.UUID(str(pk))
             note = Note.objects.get(id=note_uuid)
-            print(f"Note found: {note.id}, deleted={note.deleted}")
         except (ValueError, Note.DoesNotExist):
-            print("Note not found or invalid ID")
             return Response({"error": "Note not found or invalid ID"}, status=status.HTTP_404_NOT_FOUND)
 
         user = request.user
-        print(f"User: {user.username}, Author: {note.author.username}")
         if note.author != user:
-            print("Forbidden: Not author")
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         if not user.groups.filter(name='teachers').exists():
-            print("Forbidden: Not in teachers group")
-            return Response({"error": "You do not have permission to delete this note"},
-                            status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "You do not have permission to delete this note"}, status=status.HTTP_403_FORBIDDEN)
 
-        # Жёсткое удаление (hard delete)
-        note.delete() # <-- Физически удаляет из БД
-        print(f"Note {note.id} deleted from database.")
+        # Жёсткое удаление (hard delete) - физически удаляет из БД
+        note.delete()
 
-        # <<< УБРАТЬ ВСЁ, ЧТО БЫЛО ПОСЛЕ note.delete() >>>
-        # print(f"Before save - deleted={note.deleted}")
-        # note.deleted = True
-        # note.updated_at = ...
-        # note.save()
-        # print(f"After save - deleted={note.deleted}")
-
-        # Ответ без updated_at, потому что объекта больше нет
         return Response({
             "success": True,
-            "id": str(note.id), # <-- ID можно вернуть, но объекта в БД уже нет
+            "id": str(note.id),
         })
 
 @api_view(['GET'])
