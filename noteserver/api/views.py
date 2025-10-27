@@ -11,6 +11,7 @@ from rest_framework.decorators import api_view
 from .models import Note
 from .serializers import NoteSerializer, RegisterSerializer
 
+
 class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -23,11 +24,19 @@ class RegisterView(APIView):
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class SyncNotesView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         user = request.user
+
+        # ПРОВЕРКА: студенты не могут отправлять заметки на сервер
+        if user.groups.filter(name='students').exists():
+            return Response({
+                "error": "Forbidden: Students cannot sync notes to server"
+            }, status=status.HTTP_403_FORBIDDEN)
+
         notes = request.data.get("notes", [])
         now = int(timezone.now().timestamp() * 1000)
         saved_notes = []
@@ -49,7 +58,7 @@ class SyncNotesView(APIView):
                 id=note_uuid,
                 defaults={
                     "author": user,
-                    "author_name": author_name,  # Сохраняем имя автора из запроса
+                    "author_name": author_name,
                     "subject": n.get("subject", ""),
                     "text": n.get("text", ""),
                     "created_at": n.get("created_at", now),
@@ -64,6 +73,7 @@ class SyncNotesView(APIView):
             "notes": saved_notes,
             "serverTime": now
         })
+
 
 class UpdatesView(APIView):
     permission_classes = [IsAuthenticated]
@@ -83,6 +93,7 @@ class UpdatesView(APIView):
             "serverTime": server_time
         })
 
+
 class DeleteNoteView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -98,7 +109,8 @@ class DeleteNoteView(APIView):
             return Response({"error": "Forbidden"}, status=status.HTTP_403_FORBIDDEN)
 
         if not user.groups.filter(name='teachers').exists():
-            return Response({"error": "You do not have permission to delete this note"}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"error": "You do not have permission to delete this note"},
+                            status=status.HTTP_403_FORBIDDEN)
 
         # Жёсткое удаление (hard delete) - физически удаляет из БД
         note.delete()
@@ -107,6 +119,7 @@ class DeleteNoteView(APIView):
             "success": True,
             "id": str(note.id),
         })
+
 
 @api_view(['GET'])
 def get_user_group(request):
