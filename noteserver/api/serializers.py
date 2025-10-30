@@ -1,3 +1,4 @@
+# journal/serializers.py
 from rest_framework import serializers
 from .models import Note
 from django.contrib.auth.models import User
@@ -7,8 +8,7 @@ class NoteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Note
-        fields = '__all__'  # uploaded_at уже будет включён автоматически
-
+        fields = ['id', 'author', 'author_username', 'author_name', 'subject', 'text', 'created_at', 'updated_at', 'uploaded_at']
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
