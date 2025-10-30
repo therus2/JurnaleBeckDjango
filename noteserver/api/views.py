@@ -1,31 +1,99 @@
 # journal/views.py
 import uuid
+import secrets
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework import status
 from django.utils import timezone
 from django.contrib.auth.models import User
-from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework.decorators import api_view
-from .models import Note
+from django.contrib.auth import authenticate
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from .models import Note, PermanentToken
 from .serializers import NoteSerializer, RegisterSerializer
+from .authentication import PermanentTokenAuthentication
 
 
+# ====== Кастомная аутентификация =======
+class CustomLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        user = authenticate(username=username, password=password)
+
+        if user is not None:
+            # Создаем или получаем постоянный токен
+            token_obj, created = PermanentToken.objects.get_or_create(user=user)
+
+            return Response({
+                'success': True,
+                'token': token_obj.token,
+                'username': user.username
+            })
+        else:
+            return Response({
+                'success': False,
+                'error': 'Invalid credentials'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CustomTokenVerifyView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        token = request.data.get('token')
+
+        try:
+            permanent_token = PermanentToken.objects.get(token=token)
+            return Response({
+                'success': True,
+                'username': permanent_token.user.username
+            })
+        except PermanentToken.DoesNotExist:
+            return Response({
+                'success': False,
+                'error': 'Invalid token'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ResetTokenView(APIView):
+    authentication_classes = [PermanentTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        # Удаляем старый токен и создаем новый
+        PermanentToken.objects.filter(user=user).delete()
+        new_token = PermanentToken.objects.create(user=user)
+
+        return Response({
+            'success': True,
+            'token': new_token.token
+        })
+
+
+# ====== Регистрация (остается без изменений) =======
 class RegisterView(APIView):
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            refresh = RefreshToken.for_user(user)
+            # Создаем постоянный токен для нового пользователя
+            token_obj = PermanentToken.objects.create(user=user)
+
             return Response({
-                "token": str(refresh.access_token),
+                "token": token_obj.token,
                 "username": user.username
             })
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+# ====== API с постоянной аутентификацией =======
 class SyncNotesView(APIView):
+    authentication_classes = [PermanentTokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -76,15 +144,17 @@ class SyncNotesView(APIView):
 
 
 class UpdatesView(APIView):
+    authentication_classes = [PermanentTokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         since = int(request.query_params.get("since", 0))
-        # Фильтруем только по автору, чтобы не выдавать чужие заметки
+
+        # Показываем ВСЕ заметки всех пользователей
         notes = Note.objects.filter(
-            author=request.user,
             updated_at__gt=since
         ).order_by('updated_at')
+
         serializer = NoteSerializer(notes, many=True)
         server_time = int(timezone.now().timestamp() * 1000)
         return Response({
@@ -95,6 +165,7 @@ class UpdatesView(APIView):
 
 
 class DeleteNoteView(APIView):
+    authentication_classes = [PermanentTokenAuthentication]
     permission_classes = [IsAuthenticated]
 
     def delete(self, request, pk):
@@ -122,6 +193,8 @@ class DeleteNoteView(APIView):
 
 
 @api_view(['GET'])
+@authentication_classes([PermanentTokenAuthentication])
+@permission_classes([IsAuthenticated])
 def get_user_group(request):
     user = request.user
     group_names = [g.name for g in user.groups.all()]
